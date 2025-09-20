@@ -1,0 +1,63 @@
+-- Create Users table
+CREATE TABLE users (
+    user_id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL CHECK (role IN ('manager', 'employee')),
+    manager_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+-- Create Goals table
+CREATE TABLE goals (
+    goal_id SERIAL PRIMARY KEY,
+    goal_description TEXT NOT NULL,
+    due_date DATE NOT NULL,
+    status VARCHAR(50) NOT NULL CHECK (status IN ('Draft', 'In Progress', 'Completed', 'Cancelled')),
+    employee_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    manager_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+-- Create Tasks table
+CREATE TABLE tasks (
+    task_id SERIAL PRIMARY KEY,
+    task_description TEXT NOT NULL,
+    is_approved BOOLEAN DEFAULT FALSE,
+    goal_id INTEGER REFERENCES goals(goal_id) ON DELETE CASCADE,
+    employee_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- Create Feedback table
+CREATE TABLE feedback (
+    feedback_id SERIAL PRIMARY KEY,
+    feedback_text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    goal_id INTEGER REFERENCES goals(goal_id) ON DELETE CASCADE,
+    manager_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    employee_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- Create a trigger for automated feedback
+CREATE OR REPLACE FUNCTION automated_feedback_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.status = 'Completed' AND OLD.status != 'Completed' THEN
+        INSERT INTO feedback (feedback_text, goal_id, manager_id, employee_id)
+        VALUES (
+            'This goal has been marked as completed. Well done!',
+            NEW.goal_id,
+            NEW.manager_id,
+            NEW.employee_id
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER goal_status_update
+AFTER UPDATE OF status ON goals
+FOR EACH ROW
+EXECUTE FUNCTION automated_feedback_trigger();
+
+-- Insert sample data for a quick start
+INSERT INTO users (name, role) VALUES ('Alice Manager', 'manager');
+INSERT INTO users (name, role, manager_id) VALUES ('Bob Employee', 'employee', 1);
+INSERT INTO users (name, role, manager_id) VALUES ('Charlie Employee', 'employee', 1);
